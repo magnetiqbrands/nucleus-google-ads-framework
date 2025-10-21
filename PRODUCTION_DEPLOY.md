@@ -34,6 +34,7 @@ vault token create -policy=nucleus-ads-api -ttl=720h
 sudo mkdir -p /opt/secrets
 echo "YOUR_VAULT_TOKEN" | sudo tee /opt/secrets/vault-token
 sudo chmod 600 /opt/secrets/vault-token
+sudo chown 1000:1000 /opt/secrets/vault-token
 ```
 
 ## 2. Start Redis on Host
@@ -185,6 +186,21 @@ docker exec nucleus-ads-api curl -v $VAULT_ADDR/v1/sys/health
 
 # Verify token
 sudo cat /opt/secrets/vault-token
+```
+
+### Permission denied on vault-token
+
+If you see "Permission denied" errors when reading `/run/secrets/vault-token`:
+
+```bash
+# Fix ownership (container runs as uid 1000)
+sudo chown 1000:1000 /opt/secrets/vault-token
+sudo chmod 600 /opt/secrets/vault-token
+
+# Verify
+ls -la /opt/secrets/vault-token
+
+# Should show: -rw------- 1 ubuntu ubuntu (or uid 1000)
 ```
 
 ### Can't connect to Redis
