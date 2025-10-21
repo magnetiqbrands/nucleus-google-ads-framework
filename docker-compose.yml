@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: nucleus-ads-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 8gb --maxmemory-policy allkeys-lfu --loglevel notice
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - nucleus-network
+
+  # Main API service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: nucleus-ads-api:latest
+    container_name: nucleus-ads-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Application
+      APP_ENV: production
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      APP_WORKERS: 6
+      APP_LOG_LEVEL: INFO
+
+      # Redis
+      REDIS_URL: redis://redis:6379
+      REDIS_MAX_CONNECTIONS: 50
+
+      # Cache
+      LRU_CACHE_SIZE: 10000
+      CACHE_DEFAULT_TTL: 300
+
+      # Quota
+      GLOBAL_DAILY_QUOTA: 1000000
+      DEFAULT_CLIENT_QUOTA: 10000
+
+      # Scheduler
+      SCHEDULER_WORKERS: 8
+
+      # JWT (paths to mounted secrets)
+      JWT_JWKS_PUBLIC_PATH: /run/secrets/jwks-public.pem
+      JWT_JWKS_PRIVATE_PATH: /run/secrets/jwks-private.pem
+      API_JWT_AUDIENCE: ads-api
+      API_JWT_ISSUER: ads-auth
+      JWT_EXPIRY_MINUTES: 15
+
+      # Google Ads (will be overridden by Vault or env file)
+      GOOGLE_ADS_YAML: /run/secrets/google-ads.yaml
+
+    # Mount secrets (for non-Vault deployments)
+    # volumes:
+    #   - ./secrets/google-ads.yaml:/run/secrets/google-ads.yaml:ro
+    #   - ./secrets/jwks-private.pem:/run/secrets/jwks-private.pem:ro
+    #   - ./secrets/jwks-public.pem:/run/secrets/jwks-public.pem:ro
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    networks:
+      - nucleus-network
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 12G
+        reservations:
+          cpus: '2.0'
+          memory: 6G
+
+networks:
+  nucleus-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local

@@ -1,0 +1,32 @@
+version: '3.8'
+
+# Docker Compose override for Vault-integrated deployment
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.vault.yml up -d
+
+services:
+  api:
+    # Override entrypoint to use Vault initialization
+    entrypoint: ["/app/docker/vault-init.sh"]
+    command: ["uvicorn", "apps.api_server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "6"]
+
+    environment:
+      # Vault configuration
+      VAULT_ADDR: ${VAULT_ADDR:-https://vault.example.com:8200}
+      VAULT_NAMESPACE: ${VAULT_NAMESPACE:-}
+      VAULT_SECRET_PATH: ${VAULT_SECRET_PATH:-secret/data/nucleus-ads-api}
+
+    volumes:
+      # Mount Vault authentication credentials
+      # Option 1: Token file
+      - ${VAULT_TOKEN_FILE:-./secrets/vault-token}:/run/secrets/vault-token:ro
+
+      # Option 2: AppRole (comment out token above, uncomment these)
+      # - ${VAULT_ROLE_ID_FILE:-./secrets/vault-role-id}:/run/secrets/vault-role-id:ro
+      # - ${VAULT_SECRET_ID_FILE:-./secrets/vault-secret-id}:/run/secrets/vault-secret-id:ro
+
+      # Secrets directory (Vault will write secrets here)
+      - secrets-data:/run/secrets
+
+volumes:
+  secrets-data:
+    driver: local
