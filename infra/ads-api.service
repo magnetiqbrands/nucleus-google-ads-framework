@@ -1,0 +1,39 @@
+[Unit]
+Description=Nucleus Google Ads Automation API
+After=network.target redis.service postgresql.service
+Requires=redis.service postgresql.service
+
+[Service]
+Type=notify
+User=ads-api
+Group=ads-api
+WorkingDirectory=/opt/nucleus-google-ads-framework
+Environment="PATH=/opt/nucleus-google-ads-framework/.venv/bin"
+EnvironmentFile=/etc/nucleus-ads-api/env
+ExecStart=/opt/nucleus-google-ads-framework/.venv/bin/uvicorn apps.api_server:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --workers 6 \
+    --loop uvloop \
+    --log-level info
+
+# Restart policy
+Restart=always
+RestartSec=5s
+StartLimitIntervalSec=0
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ads-api
+
+[Install]
+WantedBy=multi-user.target
