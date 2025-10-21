@@ -18,7 +18,6 @@ if [[ ! -f "$VAULT_TOKEN_FILE" ]]; then
 fi
 
 export VAULT_TOKEN=$(cat "$VAULT_TOKEN_FILE")
-chmod 600 "$VAULT_TOKEN_FILE"
 
 echo "==> Fetching secrets from $SECRET_PATH..."
 

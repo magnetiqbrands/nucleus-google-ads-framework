@@ -1,0 +1,61 @@
+version: '3.8'
+
+# Development Docker Compose without Vault
+# Uses environment variables and host Redis
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    image: nucleus-ads-api:production
+    container_name: nucleus-ads-api-dev
+    restart: unless-stopped
+
+    # Use host network to access Redis on 127.0.0.1:6379
+    network_mode: host
+
+    environment:
+      # Application
+      APP_ENV: development
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      APP_LOG_LEVEL: INFO
+
+      # Redis (host network)
+      REDIS_URL: redis://127.0.0.1:6379
+
+      # Google Ads (mock for development)
+      GOOGLE_ADS_USE_MOCK: "true"
+      GOOGLE_ADS_DEVELOPER_TOKEN: test-dev-token
+      GOOGLE_ADS_CLIENT_ID: test-client-id
+      GOOGLE_ADS_CLIENT_SECRET: test-client-secret
+      GOOGLE_ADS_REFRESH_TOKEN: test-refresh-token
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID: "1234567890"
+
+      # Cache & Quota
+      LRU_CACHE_SIZE: 10000
+      GLOBAL_DAILY_QUOTA: 1000000
+      SCHEDULER_WORKERS: 8
+
+      # JWT (development keys)
+      API_JWT_AUDIENCE: ads-api
+      API_JWT_ISSUER: ads-auth
+      JWT_EXPIRY_MINUTES: 15
+
+    volumes:
+      # Mount development entrypoint
+      - ./docker-entrypoint-dev.sh:/app/docker-entrypoint-dev.sh:ro
+
+    # Override entrypoint to skip Vault
+    entrypoint: ["/app/docker-entrypoint-dev.sh"]
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '6.0'
+          memory: 16G
+        reservations:
+          cpus: '4.0'
+          memory: 8G
