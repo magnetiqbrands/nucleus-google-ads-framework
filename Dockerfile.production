@@ -1,0 +1,52 @@
+# Production Dockerfile - Nucleus Google Ads API
+# Minimal production build with Vault integration
+
+FROM python:3.11-slim
+
+# Environment
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    jq \
+    netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 -s /bin/bash adsapi && \
+    mkdir -p /app /run/secrets && \
+    chown -R adsapi:adsapi /app /run/secrets
+
+WORKDIR /app
+
+# Copy and install dependencies
+COPY --chown=adsapi:adsapi pyproject.toml setup.py ./
+RUN pip install --no-cache-dir -e .
+
+# Copy application code
+COPY --chown=adsapi:adsapi apps/ /app/apps/
+COPY --chown=adsapi:adsapi core/ /app/core/
+COPY --chown=adsapi:adsapi security/ /app/security/
+COPY --chown=adsapi:adsapi docker/vault-entrypoint.sh /app/
+
+# Make entrypoint executable
+RUN chmod +x /app/vault-entrypoint.sh
+
+# Switch to non-root user
+USER adsapi
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Entrypoint
+ENTRYPOINT ["/app/vault-entrypoint.sh"]
+
+# Default command
+CMD ["uvicorn", "apps.api_server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "6"]

@@ -1,0 +1,61 @@
+version: '3.8'
+
+# Production Docker Compose with Vault integration
+# Uses host Redis at 127.0.0.1:6379
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    image: nucleus-ads-api:production
+    container_name: nucleus-ads-api
+    restart: unless-stopped
+
+    # Use host network to access Redis on 127.0.0.1:6379
+    network_mode: host
+
+    environment:
+      # Application
+      APP_ENV: production
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      APP_LOG_LEVEL: INFO
+
+      # Redis (host network)
+      REDIS_URL: redis://127.0.0.1:6379
+
+      # Vault
+      VAULT_ADDR: ${VAULT_ADDR:-https://vault.example.com:8200}
+      VAULT_SECRET_PATH: ${VAULT_SECRET_PATH:-secret/data/nucleus-ads-api}
+
+      # Cache & Quota
+      LRU_CACHE_SIZE: 10000
+      GLOBAL_DAILY_QUOTA: 1000000
+      SCHEDULER_WORKERS: 8
+
+      # JWT
+      API_JWT_AUDIENCE: ads-api
+      API_JWT_ISSUER: ads-auth
+      JWT_EXPIRY_MINUTES: 15
+
+    volumes:
+      # Mount Vault token from host
+      - /opt/secrets/vault-token:/run/secrets/vault-token:ro
+
+      # Persistent secrets directory (Vault writes here)
+      - vault-secrets:/run/secrets
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '6.0'
+          memory: 16G
+        reservations:
+          cpus: '4.0'
+          memory: 8G
+
+volumes:
+  vault-secrets:
+    driver: local
