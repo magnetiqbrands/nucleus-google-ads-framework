@@ -97,17 +97,14 @@ class LRUCache:
             value: Value to cache
         """
         # Update existing or add new
-        if key in self.cache:
-            self.cache.move_to_end(key)
-        else:
-            self.cache[key] = value
-            self.cache.move_to_end(key)
+        self.cache[key] = value
+        self.cache.move_to_end(key)
 
-            # Evict if over limit
-            if len(self.cache) > self.maxsize:
-                evicted_key = self.cache.popitem(last=False)
-                self.stats.evictions += 1
-                logger.debug(f"LRU cache eviction: {evicted_key[0]}")
+        # Evict if over limit (only for new keys)
+        if len(self.cache) > self.maxsize:
+            evicted_key = self.cache.popitem(last=False)
+            self.stats.evictions += 1
+            logger.debug(f"LRU cache eviction: {evicted_key[0]}")
 
         self.stats.sets += 1
 

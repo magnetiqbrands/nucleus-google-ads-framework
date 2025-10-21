@@ -121,3 +121,23 @@ class TestLRUCache:
 
         cache.delete("key1")
         assert cache.size() == 1
+
+    def test_cache_update_existing_key(self):
+        """Test that updating an existing key actually updates the value."""
+        cache = LRUCache(maxsize=10)
+
+        # Set initial value
+        cache.set("key1", "value1")
+        assert cache.get("key1") == "value1"
+
+        # Update the value for the same key
+        cache.set("key1", "value2")
+        assert cache.get("key1") == "value2"
+
+        # Verify it's still the same size (not duplicated)
+        assert cache.size() == 1
+
+        # Update again
+        cache.set("key1", "value3")
+        assert cache.get("key1") == "value3"
+        assert cache.size() == 1

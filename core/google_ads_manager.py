@@ -4,6 +4,7 @@ Google Ads API Manager with GAQL search and mutate wrappers.
 Provides a unified interface for Google Ads operations with quota/scheduler integration.
 """
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass
@@ -308,37 +309,33 @@ class GoogleAdsManager:
         Returns:
             Operation result
         """
-        result_container: List[Any] = [None]
-        error_container: List[Optional[Exception]] = [None]
-
-        async def wrapped_operation() -> None:
-            """Wrapper that handles quota charging and error capture."""
+        async def wrapped_operation() -> Any:
+            """Wrapper that handles quota charging."""
             try:
                 result = await operation_fn(**kwargs)
-                result_container[0] = result
                 # Charge quota on success
                 await self.quota_governor.charge(client_id, quota_units)
+                return result
             except Exception as e:
-                error_container[0] = e
                 # Optionally refund quota on certain errors
                 logger.error(f"Operation failed for client {client_id}: {e}")
+                raise
 
-        # Submit to scheduler
-        await self.scheduler.submit(
+        # Submit to scheduler and get completion future
+        future = await self.scheduler.submit(
             fn=wrapped_operation,
             client_id=client_id,
             tier=tier,
             urgency=urgency,
         )
 
-        # Wait for completion
-        await self.scheduler.wait_for_completion(timeout=120.0)
-
-        # Check for errors
-        if error_container[0]:
-            raise error_container[0]
-
-        return result_container[0]
+        # Wait for THIS operation to complete (not the entire queue)
+        try:
+            result = await asyncio.wait_for(future, timeout=120.0)
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"Operation timed out for client {client_id}")
+            raise TimeoutError(f"Operation timed out after 120 seconds", timeout_seconds=120)
 
     @retry(
         stop=stop_after_attempt(3),

@@ -40,6 +40,7 @@ class Operation:
     client_id: str
     tier: SLATier
     urgency: int
+    future: 'asyncio.Future[Any]'  # Completion signal for this specific operation
 
     def __lt__(self, other: 'Operation') -> bool:
         """
@@ -107,7 +108,7 @@ class PriorityScheduler:
         urgency: int = 50,
         *args: Any,
         **kwargs: Any
-    ) -> None:
+    ) -> 'asyncio.Future[Any]':
         """
         Submit an operation for execution.
 
@@ -118,6 +119,9 @@ class PriorityScheduler:
             urgency: Urgency level (0-99, higher = more urgent)
             *args: Positional arguments for fn
             **kwargs: Keyword arguments for fn
+
+        Returns:
+            Future that will be set with the result or exception when operation completes
         """
         # Calculate priority: base priority from urgency, divided by tier weight
         # Lower priority value = higher priority in queue
@@ -125,6 +129,9 @@ class PriorityScheduler:
         base_priority = 100 - urgency_clamped
         tier_weight = SLA_WEIGHT.get(tier.value, 1)
         priority = base_priority // tier_weight
+
+        # Create a future for this specific operation
+        future: asyncio.Future[Any] = asyncio.Future()
 
         operation = Operation(
             priority=priority,
@@ -135,6 +142,7 @@ class PriorityScheduler:
             client_id=client_id,
             tier=tier,
             urgency=urgency_clamped,
+            future=future,
         )
 
         await self.queue.put(operation)
@@ -145,6 +153,8 @@ class PriorityScheduler:
             f"Submitted operation for client {client_id} "
             f"(tier={tier.value}, urgency={urgency_clamped}, priority={priority})"
         )
+
+        return future
 
     async def start(self) -> None:
         """Start the scheduler workers."""
@@ -169,13 +179,14 @@ class PriorityScheduler:
         if not self._running:
             return
 
-        self._running = False
-
-        # Wait for queue to be processed or timeout
+        # Wait for queue to be processed or timeout BEFORE stopping workers
         try:
             await asyncio.wait_for(self.queue.join(), timeout=timeout)
         except asyncio.TimeoutError:
             logger.warning(f"Scheduler stop timed out after {timeout}s")
+
+        # Now stop accepting new work
+        self._running = False
 
         # Cancel all workers
         for task in self._worker_tasks:
@@ -211,8 +222,12 @@ class PriorityScheduler:
                         f"(tier={operation.tier.value}, priority={operation.priority})"
                     )
 
-                    await operation.execute()
+                    result = await operation.execute()
                     self.stats.completed += 1
+
+                    # Set future result for this specific operation
+                    if not operation.future.done():
+                        operation.future.set_result(result)
 
                     logger.debug(
                         f"Worker {worker_id} completed operation for client {operation.client_id}"
@@ -225,6 +240,10 @@ class PriorityScheduler:
                         f"client {operation.client_id}: {e}",
                         exc_info=True
                     )
+
+                    # Set future exception for this specific operation
+                    if not operation.future.done():
+                        operation.future.set_exception(e)
 
                 finally:
                     self.queue.task_done()
